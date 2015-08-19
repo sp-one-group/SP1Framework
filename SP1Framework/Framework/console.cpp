@@ -1,12 +1,7 @@
 #include "console.h"
 #include <cstdio>
 
-// Set a screen buffer for us to write to before flushing it to the screen
-HANDLE hScreenBuffer = INVALID_HANDLE_VALUE; 
-CHAR_INFO* screenDataBuffer = 0;
-extern COORD ConsoleSize;
-
-void gotoXY(int x,int y)
+void gotoXY(int x, int y)
 {
 	COORD c={x,y};
     gotoXY(c);
@@ -76,15 +71,35 @@ bool isKeyPressed(unsigned short key)
     return ((GetAsyncKeyState(key) & 0x8001) != 0);
 }
 
+//=============================================================================
+// Console object code follows
+//=============================================================================
+Console::Console(COORD consoleSize, LPCSTR lpConsoleTitle) : 
+    screenDataBufferSize(consoleSize.X * consoleSize.Y)
+{
+	initConsole(consoleSize, lpConsoleTitle);
+}
 
-void initConsole(COORD consoleSize, LPCSTR lpConsoleTitle)
+Console::Console(unsigned short consoleWidth, unsigned short consoleHeight, LPCSTR lpConsoleTitle) :
+    screenDataBufferSize(consoleWidth * consoleHeight)
+{
+	COORD consoleSize = { consoleWidth, consoleHeight };
+	initConsole(consoleSize, lpConsoleTitle);
+}
+
+Console::~Console()
+{
+	shutDownConsole();
+}
+
+void Console::initConsole(COORD consoleSize, LPCSTR lpConsoleTitle)
 {
     // Use the ascii version for the consoleTitle
     SetConsoleTitleA(lpConsoleTitle);
     SetConsoleCP(437);
     
-    // set up screen buffer
-    screenDataBuffer = new CHAR_INFO[consoleSize.X * consoleSize.Y];
+    // set up screen buffer    
+    screenDataBuffer = new CHAR_INFO[screenDataBufferSize];
 
     hScreenBuffer = CreateConsoleScreenBuffer( 
        GENERIC_READ |           // read/write access 
@@ -98,26 +113,41 @@ void initConsole(COORD consoleSize, LPCSTR lpConsoleTitle)
     SetConsoleActiveScreenBuffer(hScreenBuffer); 
     // Sets the console size
     setConsoleSize(consoleSize.X, consoleSize.Y);
+    this->consoleSize = consoleSize;
 }
 
-void shutDownConsole()
+void Console::setConsoleTitle(LPCSTR lpConsoleTitle)
+{
+	SetConsoleTitleA(lpConsoleTitle);
+}
+
+void Console::setConsoleFont(SHORT width, SHORT height, LPCWSTR lpcwFontName)
+{
+    CONSOLE_FONT_INFOEX cfi;
+    cfi.cbSize = sizeof cfi;
+    cfi.nFont = 0;
+    cfi.dwFontSize.X = width;
+    cfi.dwFontSize.Y = height;
+    cfi.FontFamily = FF_DONTCARE;
+    cfi.FontWeight = FW_NORMAL;
+    wcscpy_s(cfi.FaceName, lpcwFontName);
+    SetCurrentConsoleFontEx(GetStdHandle(STD_OUTPUT_HANDLE), FALSE, &cfi);
+}
+
+void Console::shutDownConsole()
 {
     delete [] screenDataBuffer;
     SetConsoleActiveScreenBuffer(GetStdHandle(STD_OUTPUT_HANDLE));
 }
 
-CHAR_INFO* getScreenDataBuffer()
-{
-    return screenDataBuffer;
-}
 
-void flushBufferToConsole()
+void Console::flushBufferToConsole()
 {
     writeToConsole(screenDataBuffer);    
 }
 
 // sets the size of the console
-void setConsoleSize(unsigned short consoleWidth, unsigned short consoleHeight)
+void Console::setConsoleSize(unsigned short consoleWidth, unsigned short consoleHeight)
 {
     SMALL_RECT windowSize = {0, 0, consoleWidth-1, consoleHeight-1};
     COORD buffSize = {consoleWidth, consoleHeight};
@@ -128,19 +158,21 @@ void setConsoleSize(unsigned short consoleWidth, unsigned short consoleHeight)
     bSuccess = SetConsoleScreenBufferSize(hConsole, buffSize);
 	PERR( bSuccess, "SetConsoleWindowInfo" );
 }
-void clearBuffer(WORD attribute)
+void Console::clearBuffer(WORD attribute)
 {
-    size_t buffSize = ConsoleSize.X * ConsoleSize.Y;
-    for (size_t i = 0; i < buffSize; ++i)
+    for (size_t i = 0; i < screenDataBufferSize; ++i)
     {
         screenDataBuffer[i].Char.AsciiChar = ' ';
         screenDataBuffer[i].Attributes = attribute;
     }
 }
-void writeToBuffer(COORD c, LPCSTR str, WORD attribute)
-{    
-    size_t index = c.X + ConsoleSize.X * c.Y;
+
+void Console::writeToBuffer(SHORT x, SHORT y, LPCSTR str, WORD attribute)
+{
+    size_t index = max(x + consoleSize.X * y, 0);
     size_t length = strlen(str);
+    // if the length of the string exceeds the buffer size, we chop it off at the end
+    length = min(screenDataBufferSize - index - 1, length);
     for (size_t i = 0; i < length; ++i)
     {
         screenDataBuffer[index+i].Char.AsciiChar = str[i];
@@ -148,21 +180,38 @@ void writeToBuffer(COORD c, LPCSTR str, WORD attribute)
     }
 }
 
-void writeToBuffer(COORD c, std::string& s, WORD attribute)
-{
-    writeToBuffer(c, s.c_str(), attribute);
+void Console::writeToBuffer(COORD c, LPCSTR str, WORD attribute)
+{    
+    writeToBuffer(c.X, c.Y, str, attribute);
 }
 
-void writeToBuffer(COORD c, char ch, WORD attribute)
+void Console::writeToBuffer(SHORT x, SHORT y, std::string& s, WORD attribute)
 {
-    screenDataBuffer[c.X + ConsoleSize.X * c.Y].Char.AsciiChar = ch;
-    screenDataBuffer[c.X + ConsoleSize.X * c.Y].Attributes = attribute;
+    writeToBuffer(x, y, s.c_str(), attribute);
 }
 
-void writeToConsole(const CHAR_INFO* lpBuffer)
+void Console::writeToBuffer(COORD c, std::string& s, WORD attribute)
+{
+    writeToBuffer(c.X, c.Y, s.c_str(), attribute);
+}
+
+void Console::writeToBuffer(SHORT x, SHORT y, char ch, WORD attribute)
+{
+    if (x < 0 || x > consoleSize.X || y < 0 || y > consoleSize.Y)
+        return;
+    screenDataBuffer[x + consoleSize.X * y].Char.AsciiChar = ch;
+    screenDataBuffer[x + consoleSize.X * y].Attributes = attribute;
+}
+
+void Console::writeToBuffer(COORD c, char ch, WORD attribute)
+{
+    writeToBuffer(c.X, c.Y, ch, attribute);
+}
+
+void Console::writeToConsole(const CHAR_INFO* lpBuffer)
 {
     COORD c = {0,0};
-    SMALL_RECT WriteRegion = {0, 0, ConsoleSize.X-1, ConsoleSize.Y-1};
+    SMALL_RECT WriteRegion = {0, 0, consoleSize.X-1, consoleSize.Y-1};
     // WriteConsoleOutputA for ASCII text
-    WriteConsoleOutputA(hScreenBuffer, lpBuffer, ConsoleSize, c, &WriteRegion);
+    WriteConsoleOutputA(hScreenBuffer, lpBuffer, consoleSize, c, &WriteRegion);
 }
