@@ -44,15 +44,33 @@ Renders the current state of game onto screen. Go to a specific coordinate on th
 ##### shutdown()
 Code for cleaning up of game, writing of files, close files, free up memory, etc.
 
-###Other functions in the framework
+###Console functions in the framework
 
-#### setConsoleSize()
-Sets the size of the console. The largest size depends on your screen  
+##### void initConsole(COORD consoleSize, LPCSTR lpConsoleTitle=0);
+Inits the console size, and give it a title, pass in a C-Style string
 
-#### SetConsoleTitle()
-Sets the title of the console. 
+##### void shutDownConsole();
+Call this before you quit the game. Returns the console to show output from the STDOUT stream  
 
 
+
+##### void clearBuffer(WORD attribute = 0x0F);
+Clears the data buffer, hence "clearing the screen", preparing for new data.
+
+##### void writeToBuffer(COORD c, LPCSTR str, WORD attribute = 0x0F);
+##### void writeToBuffer(COORD c, std::string s, WORD attribute = 0x0F);
+##### void writeToBuffer(COORD c, char ch, WORD attribute = 0x0F);
+These 3 functions writes to the buffer at that coordinate, you can use C-Style strings, C++ string class or a char. The attribute is a optional parameter.
+
+##### void flushBufferToConsole();
+Call this at the end of the render() function so that the contents of the buffer will be displayed onto the screen.
+
+### Advanced users only
+
+##### CHAR_INFO* getScreenDataBuffer();
+Gets the screen data buffer, the buffer used in displaying the output. Do not use this unless you know what you are doing.  
+##### void writeToConsole(const CHAR_INFO* lpBuffer);
+With the screen data buffer, flush the output to the console.
 
 FAQ
 ---
@@ -61,6 +79,8 @@ FAQ
 There is a function setConsoleSize() that does this. See above
 
 **The screen flickers!**  
-Everyone else is facing the same problem, don't worry too much about it. I have a solution ready in the other branch. You must make sure that all your rendering code is in the render() function. Your code for output and for checking the state should be kept separate in order to use the new code.
+Everyone else is facing the same problem, don't worry too much about it. If this is really bothering you, check out the "WriteToBuffer" branch of this repository. You must make sure that all your rendering code is in the render() function. Otherwise, you will be in a world of pain if you try to use that code. The codes should be sufficiently commented for you to get started.
 
+**Unicode**  
+Right now, there is no support for unicode, but talk to me if you really need unicode, and we see if we can try out some stuff.
 
